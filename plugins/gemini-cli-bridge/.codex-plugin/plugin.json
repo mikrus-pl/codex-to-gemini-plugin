@@ -1,13 +1,13 @@
 {
   "name": "gemini-cli-bridge",
   "version": "0.1.0",
-  "description": "Delegate selected tasks from Codex to Gemini CLI using a strict Gemini 3.1 Pro model workflow.",
+  "description": "Delegate Codex tasks to Gemini CLI for large-context project analysis with strict one-shot model control.",
   "author": {
-    "name": "M Wasaznik",
+    "name": "Michał S. Wasażnik",
     "email": "support@example.com",
-    "url": "https://github.com/michalwasaznik"
+    "url": "https://www.heuron.pl"
   },
-  "homepage": "https://github.com/michalwasaznik/codex-to-gemini-plugin",
+  "homepage": "https://www.aicanvas.space",
   "repository": "https://github.com/michalwasaznik/codex-to-gemini-plugin",
   "license": "MIT",
   "keywords": [
@@ -15,27 +15,29 @@
     "codex",
     "cli",
     "delegation",
-    "automation"
+    "large-context",
+    "security-review",
+    "business-risk-analysis"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Gemini CLI Bridge",
-    "shortDescription": "Run Gemini CLI tasks from Codex with strict model control",
-    "longDescription": "Provides a production-safe workflow to delegate specific tasks from Codex to Gemini CLI in headless mode, defaulting to Gemini 3.1 Pro preview with no automatic fallback.",
-    "developerName": "M Wasaznik",
+    "shortDescription": "One-shot Gemini consultation for deep project analysis",
+    "longDescription": "Provides a production-safe workflow to delegate one-shot analysis tasks from Codex to Gemini CLI in headless mode, optimized for large-context reviews by passing all related files directly into Gemini to surface technical flaws, security vulnerabilities, and business-level risks.",
+    "developerName": "Michał S. Wasażnik",
     "category": "Coding",
     "capabilities": [
       "Interactive",
       "Read",
       "Write"
     ],
-    "websiteURL": "https://github.com/michalwasaznik/codex-to-gemini-plugin",
+    "websiteURL": "https://www.heuron.pl",
     "privacyPolicyURL": "https://policies.google.com/privacy",
     "termsOfServiceURL": "https://policies.google.com/terms",
     "defaultPrompt": [
-      "Delegate this architecture review to Gemini 3.1 Pro and return an action plan.",
-      "Run a second-opinion code risk analysis via Gemini CLI and summarize findings.",
-      "Ask Gemini CLI to produce migration rollout steps and rollback criteria."
+      "Review this project with all related files for technical and business risks, then return one actionable report.",
+      "Analyze these backend and frontend files together to find vulnerabilities, logic flaws, and regression risks.",
+      "Perform a one-shot architecture and delivery-risk audit using the full linked file context."
     ],
     "brandColor": "#1A73E8",
     "composerIcon": "./assets/gemini-cli-bridge-small.svg",

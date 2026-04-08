@@ -1,6 +1,6 @@
 ---
 name: gemini-cli-bridge
-description: Delegate selected tasks to Gemini CLI in headless mode. Use when the user explicitly asks for a Gemini second opinion, parallel analysis, or execution with Gemini 3.1 Pro from Codex.
+description: Delegate project-scale one-shot analysis tasks to Gemini CLI in headless mode. Use when the user wants large-context review of many related files to uncover technical, security, and business risks.
 ---
 
 # Gemini CLI Bridge
@@ -10,6 +10,12 @@ description: Delegate selected tasks to Gemini CLI in headless mode. Use when th
 This skill provides a strict and auditable bridge from Codex to Gemini CLI.
 It is designed for production-sensitive workflows where model choice must stay explicit.
 It also supports one-shot consultations with large, explicit file context.
+
+Recommended use:
+
+- Pass all directly related backend, frontend, migration, and design or policy files.
+- Ask for a single final analysis that includes technical defects, vulnerabilities,
+  business impact, and mitigation priorities.
 
 Default model:
 
@@ -61,6 +67,7 @@ python3 scripts/run_gemini.py \
    - Select concrete files needed for reasoning (it is acceptable to pass many full files).
    - Prefer explicit files with `--context-file`; use `--context-dir` for cohesive modules.
    - Do not pass secrets or unrelated files.
+   - Prefer complete files over snippets so Gemini can reason across full code and flow boundaries.
 4. Execute:
    - Build prompt file and run wrapper with `--output-format json` and context flags.
    - Keep `--model` explicit.
@@ -70,6 +77,7 @@ python3 scripts/run_gemini.py \
 6. Summarize:
    - Report what Gemini returned.
    - Highlight confidence and unresolved risks before applying changes.
+   - Clearly separate technical findings from business-flow findings.
 
 ## Guardrails
 

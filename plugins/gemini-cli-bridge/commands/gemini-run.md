@@ -5,6 +5,7 @@ description: Delegate a task from Codex to Gemini CLI using the strict Gemini 3.
 # Gemini Run
 
 Delegate work to Gemini CLI and return structured output to Codex.
+This command is best for one-shot project analysis with many related full files.
 
 ## Preflight
 
@@ -29,8 +30,9 @@ fi
 ## Plan
 
 1. Build a deterministic prompt from `$ARGUMENTS`.
-2. Run Gemini CLI via wrapper in JSON mode.
-3. Validate wrapper response and summarize Gemini output.
+2. Attach all related files and module directories as explicit context.
+3. Run Gemini CLI via wrapper in JSON mode.
+4. Validate wrapper response and summarize Gemini output.
 
 No destructive operations are performed by this command.
 
@@ -44,9 +46,11 @@ PROMPT
 
 ```bash
 CONTEXT_ARGS=(
-  --context-file ./path/to/file1
-  --context-file ./path/to/file2
-  --context-dir ./path/to/module_dir
+  --context-file ./backend/src/service_a.py
+  --context-file ./backend/src/service_b.py
+  --context-file ./frontend/src/app.tsx
+  --context-file ./docs/business-rules.md
+  --context-dir ./backend/migrations
 )
 ```
 
@@ -70,8 +74,9 @@ python3 "$SCRIPT_PATH" \
 Return:
 
 - delegated model
-- Gemini result summary
-- known risks or confidence limits
+- technical risk summary
+- business-flow risk summary
+- known confidence limits
 
 ## Next Steps
 

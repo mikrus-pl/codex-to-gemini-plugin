@@ -1,6 +1,6 @@
 # Gemini CLI Bridge Plugin
 
-`gemini-cli-bridge` is a Codex plugin that delegates selected tasks to Gemini CLI in headless mode.
+`gemini-cli-bridge` is a Codex plugin that delegates one-shot, large-context analysis tasks to Gemini CLI in headless mode.
 
 ## What it provides
 
@@ -17,6 +17,16 @@
 - healthcheck before delegation
 - one-shot prompt framing for deterministic consultation
 - explicit multi-file context injection via `--context-file` and `--context-dir`
+
+## Recommended usage
+
+Use this plugin when you need a deep project audit in one response:
+
+- pass all related full files (backend, frontend, migrations, docs, business rules)
+- ask Gemini for one final report with technical defects and architecture gaps
+- ask Gemini for one final report with security vulnerabilities and exploit surfaces
+- ask Gemini for one final report with business-flow weaknesses and delivery or regression risks
+- ask Gemini for one final report with prioritized mitigations
 
 ## Prerequisites
 
