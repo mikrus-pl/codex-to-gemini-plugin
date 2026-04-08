@@ -26,6 +26,7 @@ fi
 3. Run wrapper healthcheck:
    - `python3 "$SCRIPT_PATH" --healthcheck`
 4. If healthcheck fails, stop and return actionable remediation.
+5. Keep approval mode read-only (`plan`) so Gemini cannot invoke editing tools.
 
 ## Plan
 
@@ -57,6 +58,7 @@ CONTEXT_ARGS=(
 ```bash
 python3 "$SCRIPT_PATH" \
   --model gemini-3.1-pro-preview \
+  --approval-mode plan \
   --prompt-file /tmp/gemini_bridge_prompt.txt \
   "${CONTEXT_ARGS[@]}" \
   --output-format json \

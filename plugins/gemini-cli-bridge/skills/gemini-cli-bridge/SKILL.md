@@ -10,6 +10,8 @@ description: Delegate project-scale one-shot analysis tasks to Gemini CLI in hea
 This skill provides a strict and auditable bridge from Codex to Gemini CLI.
 It is designed for production-sensitive workflows where model choice must stay explicit.
 It also supports one-shot consultations with large, explicit file context.
+It enforces read-only approval mode (`--approval-mode=plan`) so Gemini cannot modify
+project files during analysis runs.
 
 Recommended use:
 
@@ -70,7 +72,9 @@ python3 scripts/run_gemini.py \
    - Prefer complete files over snippets so Gemini can reason across full code and flow boundaries.
 4. Execute:
    - Build prompt file and run wrapper with `--output-format json` and context flags.
+   - Keep Gemini prompt handoff positional (do not use deprecated Gemini `--prompt` flag).
    - Keep `--model` explicit.
+   - Keep `--approval-mode=plan` to block editing tools.
 5. Validate:
    - Require `ok: true` and `exit_code: 0` in wrapper output.
    - Parse `gemini.response` when present, otherwise use `stdout`.
@@ -88,10 +92,12 @@ python3 scripts/run_gemini.py \
 - Never suppress wrapper errors.
 - Never claim Gemini output is verified unless local checks were executed.
 - If fallback is requested by Gemini CLI due limits/capacity, ask user permission first.
+- Never use deprecated Gemini CLI prompt flags; keep prompt positional.
 - Never send ambiguous prompts in one-shot mode.
 - Never include files outside task scope without explicit reason.
 - Never present unverified technical findings as facts.
 - Never report business-flow issues without prioritization and explicit impact language.
+- Never run in any approval mode other than `plan` for this plugin.
 
 ## Business impact guidance
 

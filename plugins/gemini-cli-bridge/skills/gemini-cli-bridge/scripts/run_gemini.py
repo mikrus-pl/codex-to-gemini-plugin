@@ -17,6 +17,7 @@ from typing import Any, Sequence
 DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_TIMEOUT_SECONDS = 900
 DEFAULT_ONE_SHOT = True
+DEFAULT_APPROVAL_MODE = "plan"
 
 MODEL_ALIASES = {
     "gemini3.1pro": DEFAULT_MODEL,
@@ -90,6 +91,7 @@ def compose_prompt(
             "ONE-SHOT MODE:\n"
             "- Return a complete final answer in one response.\n"
             "- Do not ask follow-up questions.\n"
+            "- Do not modify any files. Analysis only.\n"
             "- If assumptions are required, list them explicitly.\n"
             "- Highlight risks and unknowns clearly."
         )
@@ -118,6 +120,7 @@ def build_command(
     gemini_binary: str,
     model: str,
     output_format: str,
+    approval_mode: str,
     include_directories: Sequence[str],
     prompt: str,
 ) -> list[str]:
@@ -127,9 +130,12 @@ def build_command(
         model,
         "--output-format",
         output_format,
+        "--approval-mode",
+        approval_mode,
     ]
     if include_directories:
         command.extend(["--include-directories", ",".join(include_directories)])
+    # Gemini CLI now recommends positional prompt input over deprecated --prompt.
     command.append(prompt)
     return command
 
@@ -210,6 +216,7 @@ def execute_gemini(
     gemini_binary: str,
     model: str,
     output_format: str,
+    approval_mode: str,
     prompt: str,
     context_files: Sequence[Path],
     context_dirs: Sequence[Path],
@@ -229,6 +236,7 @@ def execute_gemini(
         gemini_binary=gemini_binary,
         model=model,
         output_format=output_format,
+        approval_mode=approval_mode,
         include_directories=include_directories,
         prompt=prompt,
     )
@@ -270,6 +278,7 @@ def execute_gemini(
         "exit_code": process.returncode,
         "model": model,
         "output_format": output_format,
+        "approval_mode": approval_mode,
         "cwd": str(cwd),
         "context_files": [str(path.resolve()) for path in context_files],
         "context_dirs": [str(path.resolve()) for path in context_dirs],
@@ -329,6 +338,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         choices=["json", "text", "stream-json"],
         default="json",
         help="Gemini output format flag.",
+    )
+    parser.add_argument(
+        "--approval-mode",
+        choices=["plan"],
+        default=DEFAULT_APPROVAL_MODE,
+        help=(
+            "Tool approval mode. Fixed to plan (read-only) to block edit tools "
+            "during headless analysis."
+        ),
     )
     parser.add_argument(
         "--prompt",
@@ -485,6 +503,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         gemini_binary=args.gemini_binary,
         model=model,
         output_format=args.output_format,
+        approval_mode=args.approval_mode,
         prompt=prompt_with_context,
         context_files=context_files,
         context_dirs=context_dirs,

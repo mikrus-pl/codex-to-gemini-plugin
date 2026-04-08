@@ -16,7 +16,9 @@
 - structured JSON output for traceability
 - healthcheck before delegation
 - one-shot prompt framing for deterministic consultation
+- positional prompt handoff to Gemini CLI (avoids deprecated `--prompt` flag)
 - explicit multi-file context injection via `--context-file` and `--context-dir`
+- enforced read-only tool mode via `--approval-mode=plan` (no edit tools)
 
 ## Recommended usage
 
@@ -41,8 +43,15 @@ python3 skills/gemini-cli-bridge/scripts/run_gemini.py --healthcheck
 ```
 
 ```bash
+cat > /tmp/gemini_bridge_prompt.txt <<'PROMPT'
+Review risks in the pending migration and propose rollout plan.
+PROMPT
+```
+
+```bash
 python3 skills/gemini-cli-bridge/scripts/run_gemini.py \
-  --prompt "Review risks in the pending migration and propose rollout plan." \
+  --prompt-file /tmp/gemini_bridge_prompt.txt \
+  --approval-mode plan \
   --context-file ./backend/schema.sql \
   --context-file ./backend/migrations/20260408_add_column.sql \
   --context-file ./backend/services/order_service.py \

@@ -39,6 +39,7 @@ class RunGeminiTests(unittest.TestCase):
             gemini_binary="gemini",
             model=run_gemini.DEFAULT_MODEL,
             output_format="json",
+            approval_mode=run_gemini.DEFAULT_APPROVAL_MODE,
             include_directories=["../lib", "../docs"],
             prompt="Summarize project",
         )
@@ -46,6 +47,9 @@ class RunGeminiTests(unittest.TestCase):
         self.assertIn("--model", command)
         self.assertIn(run_gemini.DEFAULT_MODEL, command)
         self.assertIn("--output-format", command)
+        self.assertIn("--approval-mode", command)
+        self.assertIn("plan", command)
+        self.assertNotIn("--prompt", command)
         self.assertIn("--include-directories", command)
         self.assertEqual(command[-1], "Summarize project")
 
@@ -60,6 +64,7 @@ class RunGeminiTests(unittest.TestCase):
         self.assertIn("with\\ space.ts", prompt)
         self.assertIn("/src", prompt)
         self.assertIn("ONE-SHOT MODE", prompt)
+        self.assertIn("Do not modify any files. Analysis only.", prompt)
         self.assertIn("Task:", prompt)
 
     @mock.patch("shutil.which", return_value=None)
@@ -79,6 +84,7 @@ class RunGeminiTests(unittest.TestCase):
             gemini_binary="gemini",
             model=run_gemini.DEFAULT_MODEL,
             output_format="json",
+            approval_mode=run_gemini.DEFAULT_APPROVAL_MODE,
             prompt="Run task",
             context_files=[],
             context_dirs=[],
