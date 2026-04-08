@@ -74,10 +74,13 @@ python3 scripts/run_gemini.py \
 5. Validate:
    - Require `ok: true` and `exit_code: 0` in wrapper output.
    - Parse `gemini.response` when present, otherwise use `stdout`.
+   - Treat technical findings as hypotheses until critically verified against the codebase.
+   - If a technical finding is confirmed, fix it or explicitly document why it is deferred.
 6. Summarize:
    - Report what Gemini returned.
    - Highlight confidence and unresolved risks before applying changes.
    - Clearly separate technical findings from business-flow findings.
+   - Present business findings as a prioritized list with clear impact and urgency.
 
 ## Guardrails
 
@@ -87,6 +90,8 @@ python3 scripts/run_gemini.py \
 - If fallback is requested by Gemini CLI due limits/capacity, ask user permission first.
 - Never send ambiguous prompts in one-shot mode.
 - Never include files outside task scope without explicit reason.
+- Never present unverified technical findings as facts.
+- Never report business-flow issues without prioritization and explicit impact language.
 
 ## Business impact guidance
 
