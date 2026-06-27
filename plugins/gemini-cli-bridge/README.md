@@ -14,7 +14,7 @@
 - default model is explicit: `gemini-3.1-pro-preview`
 - no automatic model fallback
 - structured JSON output for traceability
-- healthcheck before delegation
+- healthcheck before delegation (binary + non-interactive auth)
 - one-shot prompt framing for deterministic consultation
 - positional prompt handoff to Gemini CLI (avoids deprecated `--prompt` flag)
 - explicit multi-file context injection via `--context-file` and `--context-dir`
@@ -42,16 +42,24 @@ Use this plugin when you need a deep project audit in one response:
 python3 skills/gemini-cli-bridge/scripts/run_gemini.py --healthcheck
 ```
 
+The healthcheck now verifies both:
+- Gemini CLI binary availability/version
+- headless authentication readiness (non-interactive run)
+
 ```bash
-cat > /tmp/gemini_bridge_prompt.txt <<'PROMPT'
+mkdir -p "$PWD/.tmp"
+
+cat > "$PWD/.tmp/gemini_bridge_prompt.txt" <<'PROMPT'
 Review risks in the pending migration and propose rollout plan.
 PROMPT
 ```
 
 ```bash
 python3 skills/gemini-cli-bridge/scripts/run_gemini.py \
-  --prompt-file /tmp/gemini_bridge_prompt.txt \
+  --prompt-file "$PWD/.tmp/gemini_bridge_prompt.txt" \
   --approval-mode plan \
+  --progress-logs \
+  --progress-heartbeat-seconds 15 \
   --context-file ./backend/schema.sql \
   --context-file ./backend/migrations/20260408_add_column.sql \
   --context-file ./backend/services/order_service.py \
@@ -61,6 +69,19 @@ python3 skills/gemini-cli-bridge/scripts/run_gemini.py \
 
 The wrapper injects these paths into Gemini context with `@path` references and keeps
 the request in one-shot mode by default.
+
+Context path policy:
+
+- `--context-file` and `--context-dir` must resolve inside `--cwd` or `~/.gemini/tmp/<project>`.
+- If external paths are required, run with `--materialize-external-context` so the wrapper copies
+  them into `$PWD/.tmp/gemini-context` first.
+- `Path not in workspace` or `Error executing tool` in stderr is treated as hard failure.
+
+Runtime observability:
+
+- Wrapper prints progress logs to stderr by default (`START`, `PREFLIGHT`, `EXECUTE`, periodic `RUNNING`, final `COMPLETE` or `TIMEOUT`).
+- Use `--no-progress-logs` only when a fully silent terminal is required.
+- If terminal appears blocked and no heartbeat appears, treat the run as operationally unhealthy and restart with diagnostics enabled.
 
 ## Repository wiring
 

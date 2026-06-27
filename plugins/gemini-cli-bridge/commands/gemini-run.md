@@ -26,6 +26,7 @@ fi
 3. Run wrapper healthcheck:
    - `python3 "$SCRIPT_PATH" --healthcheck`
 4. If healthcheck fails, stop and return actionable remediation.
+   - `AUTH_REQUIRED` means Gemini is not authenticated for non-interactive/headless execution.
 5. Keep approval mode read-only (`plan`) so Gemini cannot invoke editing tools.
 
 ## Plan
@@ -40,7 +41,9 @@ No destructive operations are performed by this command.
 ## Commands
 
 ```bash
-cat > /tmp/gemini_bridge_prompt.txt <<PROMPT
+mkdir -p "$PWD/.tmp"
+
+cat > "$PWD/.tmp/gemini_bridge_prompt.txt" <<PROMPT
 $ARGUMENTS
 PROMPT
 ```
@@ -59,7 +62,9 @@ CONTEXT_ARGS=(
 python3 "$SCRIPT_PATH" \
   --model gemini-3.1-pro-preview \
   --approval-mode plan \
-  --prompt-file /tmp/gemini_bridge_prompt.txt \
+  --prompt-file "$PWD/.tmp/gemini_bridge_prompt.txt" \
+  --progress-logs \
+  --progress-heartbeat-seconds 15 \
   "${CONTEXT_ARGS[@]}" \
   --output-format json \
   --cwd .
@@ -69,7 +74,19 @@ python3 "$SCRIPT_PATH" \
 
 1. Require JSON output from wrapper.
 2. Require `ok=true` and `exit_code=0`.
-3. If wrapper returns non-zero, stop and surface the exact error type and message.
+3. Treat `INVALID_CONTEXT_PATH` and `GEMINI_TOOL_ERROR` as hard failures.
+4. If wrapper returns non-zero, stop and surface the exact error type and message.
+5. Require visible progress logs in stderr (`START`, `PREFLIGHT`, `EXECUTE`, heartbeat `RUNNING`, `COMPLETE`/`TIMEOUT`).
+
+## Troubleshooting
+
+1. If command appears frozen:
+   - Confirm heartbeat lines appear every ~15s.
+   - If no heartbeat appears, treat wrapper invocation as broken and rerun with `--progress-logs`.
+2. If `INVALID_CONTEXT_PATH` or `Path not in workspace` appears:
+   - Move context files from `/tmp` to `$PWD/.tmp` or rerun with `--materialize-external-context`.
+3. If `AUTH_REQUIRED` appears:
+   - Re-authenticate Gemini for non-interactive use in the same OS account.
 
 ## Summary
 

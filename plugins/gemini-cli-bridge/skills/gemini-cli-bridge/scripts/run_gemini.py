@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -18,6 +19,9 @@ DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_TIMEOUT_SECONDS = 900
 DEFAULT_ONE_SHOT = True
 DEFAULT_APPROVAL_MODE = "plan"
+DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS = 30
+DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 20
+HEALTHCHECK_AUTH_PROMPT = "Reply with exactly: AUTH_OK"
 
 MODEL_ALIASES = {
     "gemini3.1pro": DEFAULT_MODEL,
@@ -27,6 +31,12 @@ MODEL_ALIASES = {
     "gemini3pro": DEFAULT_MODEL,
     "gemini3propreview": DEFAULT_MODEL,
 }
+
+CRITICAL_STDERR_PATTERNS = (
+    "path not in workspace",
+    "error executing tool",
+)
+GEMINI_TMP_ROOT = Path.home() / ".gemini" / "tmp"
 
 
 def normalize_model_name(model: str) -> str:
@@ -66,6 +76,85 @@ def validate_paths_exist(paths: Sequence[Path], *, expected: str) -> tuple[bool,
         if expected == "dir" and not resolved.is_dir():
             missing.append(str(resolved))
     return len(missing) == 0, missing
+
+
+def is_path_within(path: Path, root: Path) -> bool:
+    normalized_path = path.resolve(strict=False)
+    normalized_root = root.resolve(strict=False)
+    try:
+        normalized_path.relative_to(normalized_root)
+        return True
+    except ValueError:
+        return False
+
+
+def allowed_context_roots(*, cwd: Path) -> list[Path]:
+    project_tmp = (GEMINI_TMP_ROOT / cwd.name).resolve(strict=False)
+    return [cwd.resolve(), project_tmp]
+
+
+def find_external_paths(paths: Sequence[Path], *, roots: Sequence[Path]) -> list[Path]:
+    external: list[Path] = []
+    for path in paths:
+        resolved = path.resolve()
+        if any(is_path_within(resolved, root) for root in roots):
+            continue
+        external.append(resolved)
+    return external
+
+
+def unique_materialized_path(destination: Path) -> Path:
+    if not destination.exists():
+        return destination
+    counter = 1
+    candidate = destination
+    while candidate.exists():
+        candidate = destination.with_name(f"{destination.name}-{counter}")
+        counter += 1
+    return candidate
+
+
+def materialize_external_paths(
+    paths: Sequence[Path],
+    *,
+    roots: Sequence[Path],
+    destination_root: Path,
+    expected: str,
+) -> tuple[list[Path], list[dict[str, str]]]:
+    rewritten: list[Path] = []
+    copies: list[dict[str, str]] = []
+    destination_root.mkdir(parents=True, exist_ok=True)
+
+    for path in paths:
+        resolved = path.resolve()
+        if any(is_path_within(resolved, root) for root in roots):
+            rewritten.append(resolved)
+            continue
+
+        base_name = resolved.name or "context"
+        destination = unique_materialized_path(destination_root / base_name)
+        if expected == "file":
+            shutil.copy2(resolved, destination)
+        else:
+            shutil.copytree(resolved, destination)
+        rewritten_destination = destination.resolve()
+        rewritten.append(rewritten_destination)
+        copies.append(
+            {
+                "source": str(resolved),
+                "materialized": str(rewritten_destination),
+            }
+        )
+
+    return rewritten, copies
+
+
+def detect_critical_stderr(stderr: str) -> str | None:
+    lower = stderr.lower()
+    for pattern in CRITICAL_STDERR_PATTERNS:
+        if pattern in lower:
+            return pattern
+    return None
 
 
 def compose_prompt(
@@ -153,6 +242,14 @@ def json_output(payload: dict[str, Any]) -> None:
     sys.stdout.write("\n")
 
 
+def log_progress(enabled: bool, phase: str, message: str) -> None:
+    if not enabled:
+        return
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    sys.stderr.write(f"[gemini-bridge][{timestamp}][{phase}] {message}\n")
+    sys.stderr.flush()
+
+
 def error_payload(
     error_type: str,
     message: str,
@@ -173,7 +270,13 @@ def error_payload(
     return payload, exit_code
 
 
-def perform_healthcheck(gemini_binary: str, model: str) -> tuple[dict[str, Any], int]:
+def perform_healthcheck(
+    gemini_binary: str,
+    model: str,
+    *,
+    progress_logs: bool = False,
+) -> tuple[dict[str, Any], int]:
+    log_progress(progress_logs, "HEALTHCHECK", "Starting wrapper healthcheck.")
     binary_path = shutil.which(gemini_binary)
     if not binary_path:
         return error_payload(
@@ -182,6 +285,11 @@ def perform_healthcheck(gemini_binary: str, model: str) -> tuple[dict[str, Any],
             exit_code=127,
             details={"binary": gemini_binary},
         )
+    log_progress(
+        progress_logs,
+        "HEALTHCHECK",
+        f"Gemini binary found at {binary_path}. Checking version and auth.",
+    )
 
     try:
         version_proc = subprocess.run(
@@ -199,16 +307,125 @@ def perform_healthcheck(gemini_binary: str, model: str) -> tuple[dict[str, Any],
             details={"reason": str(exc), "binary": gemini_binary},
         )
 
+    if version_proc.returncode != 0:
+        payload = {
+            "ok": False,
+            "binary": gemini_binary,
+            "binary_path": binary_path,
+            "model_default": model,
+            "version_stdout": version_proc.stdout.strip(),
+            "version_stderr": version_proc.stderr.strip(),
+            "exit_code": version_proc.returncode,
+        }
+        return payload, version_proc.returncode
+    log_progress(progress_logs, "HEALTHCHECK", "Version check passed.")
+
+    auth_command = build_command(
+        gemini_binary=gemini_binary,
+        model=model,
+        output_format="json",
+        approval_mode=DEFAULT_APPROVAL_MODE,
+        include_directories=[],
+        prompt=HEALTHCHECK_AUTH_PROMPT,
+    )
+    try:
+        auth_proc = subprocess.run(
+            auth_command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS,
+            env={**dict(os.environ), "NO_COLOR": "1"},
+        )
+    except subprocess.TimeoutExpired:
+        return error_payload(
+            "HEALTHCHECK_AUTH_TIMEOUT",
+            "Gemini auth healthcheck timed out in non-interactive mode.",
+            exit_code=124,
+            details={
+                "timeout_seconds": DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS,
+                "command": command_for_logs(auth_command),
+            },
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return error_payload(
+            "HEALTHCHECK_AUTH_FAILED",
+            "Unable to execute Gemini auth healthcheck command.",
+            exit_code=70,
+            details={
+                "reason": str(exc),
+                "command": command_for_logs(auth_command),
+            },
+        )
+
+    if auth_proc.returncode != 0:
+        stderr = (auth_proc.stderr or "").strip()
+        stdout = (auth_proc.stdout or "").strip()
+        combined = f"{stderr}\n{stdout}".lower()
+        if "manual authorization is required" in combined:
+            return error_payload(
+                "AUTH_REQUIRED",
+                (
+                    "Gemini CLI is not authorized for non-interactive/headless use "
+                    "in this environment."
+                ),
+                exit_code=auth_proc.returncode,
+                details={
+                    "recommendation": (
+                        "Run interactive `gemini` login for this OS user or set "
+                        "headless credentials (e.g. GEMINI_API_KEY / Vertex ADC)."
+                    ),
+                    "stdout_preview": auth_proc.stdout[:500],
+                    "stderr_preview": auth_proc.stderr[:500],
+                    "command": command_for_logs(auth_command),
+                },
+            )
+
+        return error_payload(
+            "HEALTHCHECK_AUTH_FAILED",
+            "Gemini auth healthcheck failed in non-interactive/headless mode.",
+            exit_code=auth_proc.returncode,
+            details={
+                "stdout_preview": auth_proc.stdout[:500],
+                "stderr_preview": auth_proc.stderr[:500],
+                "command": command_for_logs(auth_command),
+            },
+        )
+    log_progress(progress_logs, "HEALTHCHECK", "Headless auth check passed.")
+
+    auth_stdout = (auth_proc.stdout or "").strip()
+    if auth_stdout:
+        try:
+            json.loads(auth_stdout)
+        except json.JSONDecodeError as exc:
+            return error_payload(
+                "HEALTHCHECK_AUTH_INVALID_JSON",
+                "Gemini auth healthcheck returned non-JSON output.",
+                exit_code=65,
+                details={
+                    "reason": str(exc),
+                    "stdout_preview": auth_proc.stdout[:500],
+                    "stderr_preview": auth_proc.stderr[:500],
+                    "command": command_for_logs(auth_command),
+                },
+            )
+
     payload = {
-        "ok": version_proc.returncode == 0,
+        "ok": True,
         "binary": gemini_binary,
         "binary_path": binary_path,
         "model_default": model,
         "version_stdout": version_proc.stdout.strip(),
         "version_stderr": version_proc.stderr.strip(),
-        "exit_code": version_proc.returncode,
+        "auth_check": {
+            "ok": True,
+            "exit_code": auth_proc.returncode,
+            "command": command_for_logs(auth_command),
+        },
+        "exit_code": 0,
     }
-    return payload, 0 if version_proc.returncode == 0 else version_proc.returncode
+    log_progress(progress_logs, "HEALTHCHECK", "Healthcheck finished successfully.")
+    return payload, 0
 
 
 def execute_gemini(
@@ -223,6 +440,8 @@ def execute_gemini(
     include_directories: Sequence[str],
     cwd: Path,
     timeout_seconds: int,
+    progress_logs: bool,
+    progress_heartbeat_seconds: int,
 ) -> tuple[dict[str, Any], int]:
     if not shutil.which(gemini_binary):
         return error_payload(
@@ -242,28 +461,32 @@ def execute_gemini(
     )
 
     env = dict(os.environ)
+    heartbeat_seconds = max(1, progress_heartbeat_seconds)
+    log_progress(
+        progress_logs,
+        "EXECUTE",
+        (
+            "Starting Gemini CLI process "
+            f"(model={model}, format={output_format}, cwd={cwd})."
+        ),
+    )
+    log_progress(
+        progress_logs,
+        "EXECUTE",
+        (
+            f"Context files={len(context_files)}, context dirs={len(context_dirs)}, "
+            f"timeout={timeout_seconds}s."
+        ),
+    )
 
     try:
-        process = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=str(cwd),
             env={**env, "NO_COLOR": "1"},
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return error_payload(
-            "TIMEOUT",
-            "Gemini CLI timed out before returning a result.",
-            exit_code=124,
-            details={
-                "timeout_seconds": timeout_seconds,
-                "partial_stdout": (exc.stdout or "").strip(),
-                "partial_stderr": (exc.stderr or "").strip(),
-                "command": command_for_logs(command),
-            },
         )
     except OSError as exc:
         return error_payload(
@@ -272,6 +495,49 @@ def execute_gemini(
             exit_code=70,
             details={"reason": str(exc), "command": command_for_logs(command)},
         )
+
+    started_at = time.monotonic()
+    stdout = ""
+    stderr = ""
+    while True:
+        elapsed = time.monotonic() - started_at
+        remaining = timeout_seconds - elapsed
+        if remaining <= 0:
+            process.kill()
+            stdout, stderr = process.communicate()
+            log_progress(
+                progress_logs,
+                "TIMEOUT",
+                f"Gemini CLI timed out after {int(elapsed)}s. Process killed.",
+            )
+            return error_payload(
+                "TIMEOUT",
+                "Gemini CLI timed out before returning a result.",
+                exit_code=124,
+                details={
+                    "timeout_seconds": timeout_seconds,
+                    "partial_stdout": (stdout or "").strip(),
+                    "partial_stderr": (stderr or "").strip(),
+                    "command": command_for_logs(command),
+                },
+            )
+        try:
+            stdout, stderr = process.communicate(timeout=min(remaining, heartbeat_seconds))
+            break
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - started_at
+            log_progress(
+                progress_logs,
+                "RUNNING",
+                f"Gemini CLI still running ({int(elapsed)}s elapsed).",
+            )
+
+    elapsed_seconds = round(time.monotonic() - started_at, 3)
+    log_progress(
+        progress_logs,
+        "COMPLETE",
+        f"Gemini CLI finished in {elapsed_seconds}s with exit code {process.returncode}.",
+    )
 
     payload: dict[str, Any] = {
         "ok": process.returncode == 0,
@@ -284,13 +550,14 @@ def execute_gemini(
         "context_dirs": [str(path.resolve()) for path in context_dirs],
         "command": command_for_logs(command),
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-        "stdout": process.stdout,
-        "stderr": process.stderr,
+        "duration_seconds": elapsed_seconds,
+        "stdout": stdout,
+        "stderr": stderr,
     }
 
-    if output_format == "json" and process.stdout.strip():
+    if output_format == "json" and stdout.strip():
         try:
-            payload["gemini"] = json.loads(process.stdout)
+            payload["gemini"] = json.loads(stdout)
             if isinstance(payload["gemini"], dict):
                 response = payload["gemini"].get("response")
                 if isinstance(response, str):
@@ -302,11 +569,27 @@ def execute_gemini(
                 exit_code=65,
                 details={
                     "reason": str(exc),
-                    "stdout_preview": process.stdout[:500],
-                    "stderr_preview": process.stderr[:500],
+                    "stdout_preview": stdout[:500],
+                    "stderr_preview": stderr[:500],
                     "command": command_for_logs(command),
                 },
             )
+
+    stderr_pattern = detect_critical_stderr(stderr or "")
+    if stderr_pattern:
+        wrapper_exit_code = process.returncode if process.returncode != 0 else 65
+        return error_payload(
+            "GEMINI_TOOL_ERROR",
+            "Gemini CLI reported a tool-level error in stderr.",
+            exit_code=wrapper_exit_code,
+            details={
+                "matched_pattern": stderr_pattern,
+                "process_exit_code": process.returncode,
+                "stdout_preview": stdout[:500],
+                "stderr_preview": stderr[:1000],
+                "command": command_for_logs(command),
+            },
+        )
 
     if process.returncode != 0:
         payload["error"] = {
@@ -422,6 +705,32 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="Validate binary availability and print version metadata.",
     )
+    parser.add_argument(
+        "--materialize-external-context",
+        action="store_true",
+        help=(
+            "Copy context paths outside allowed roots into $cwd/.tmp/gemini-context "
+            "before execution."
+        ),
+    )
+    parser.add_argument(
+        "--progress-logs",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Print wrapper progress logs to stderr "
+            "(use --no-progress-logs to disable)."
+        ),
+    )
+    parser.add_argument(
+        "--progress-heartbeat-seconds",
+        type=int,
+        default=DEFAULT_PROGRESS_HEARTBEAT_SECONDS,
+        help=(
+            "Interval for runtime heartbeat logs while waiting for Gemini "
+            "response."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -438,8 +747,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         json_output(payload)
         return code
 
+    if args.progress_heartbeat_seconds <= 0:
+        payload, code = error_payload(
+            "INVALID_ARGUMENT",
+            "--progress-heartbeat-seconds must be a positive integer.",
+            exit_code=2,
+        )
+        json_output(payload)
+        return code
+
+    log_progress(
+        args.progress_logs,
+        "START",
+        f"Wrapper started (cwd={args.cwd.expanduser().resolve()}).",
+    )
     if args.healthcheck:
-        payload, code = perform_healthcheck(args.gemini_binary, model)
+        payload, code = perform_healthcheck(
+            args.gemini_binary,
+            model,
+            progress_logs=args.progress_logs,
+        )
         json_output(payload)
         return code
 
@@ -477,6 +804,66 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         json_output(payload)
         return code
+    log_progress(
+        args.progress_logs,
+        "PREFLIGHT",
+        (
+            f"Validated context inputs: files={len(context_files)}, "
+            f"dirs={len(context_dirs)}."
+        ),
+    )
+
+    roots = allowed_context_roots(cwd=context_base_dir)
+    external_files = find_external_paths(context_files, roots=roots)
+    external_dirs = find_external_paths(context_dirs, roots=roots)
+    materialization_report: dict[str, Any] = {
+        "enabled": args.materialize_external_context,
+        "files": [],
+        "dirs": [],
+    }
+    if external_files or external_dirs:
+        if args.materialize_external_context:
+            files_root = context_base_dir / ".tmp" / "gemini-context" / "files"
+            dirs_root = context_base_dir / ".tmp" / "gemini-context" / "dirs"
+            context_files, file_copies = materialize_external_paths(
+                context_files,
+                roots=roots,
+                destination_root=files_root,
+                expected="file",
+            )
+            context_dirs, dir_copies = materialize_external_paths(
+                context_dirs,
+                roots=roots,
+                destination_root=dirs_root,
+                expected="dir",
+            )
+            materialization_report["files"] = file_copies
+            materialization_report["dirs"] = dir_copies
+            log_progress(
+                args.progress_logs,
+                "PREFLIGHT",
+                (
+                    "Materialized external context into workspace: "
+                    f"files={len(file_copies)}, dirs={len(dir_copies)}."
+                ),
+            )
+        else:
+            payload, code = error_payload(
+                "INVALID_CONTEXT_PATH",
+                "Context paths must stay inside allowed Gemini roots.",
+                exit_code=2,
+                details={
+                    "invalid_files": [str(path) for path in external_files],
+                    "invalid_dirs": [str(path) for path in external_dirs],
+                    "allowed_roots": [str(root) for root in roots],
+                    "recommendation": (
+                        "Move context into the workspace or rerun with "
+                        "--materialize-external-context."
+                    ),
+                },
+            )
+            json_output(payload)
+            return code
 
     include_directories = [
         *args.include_directory,
@@ -510,7 +897,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         include_directories=include_directories,
         cwd=cwd,
         timeout_seconds=args.timeout_seconds,
+        progress_logs=args.progress_logs,
+        progress_heartbeat_seconds=args.progress_heartbeat_seconds,
     )
+    if materialization_report["files"] or materialization_report["dirs"]:
+        payload["context_materialization"] = materialization_report
     json_output(payload)
     return code
 
