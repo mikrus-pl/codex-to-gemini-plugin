@@ -1,14 +1,14 @@
 {
-  "name": "local-gemini-marketplace",
+  "name": "local-antigravity-marketplace",
   "interface": {
-    "displayName": "Local Gemini Marketplace"
+    "displayName": "Local Antigravity Marketplace"
   },
   "plugins": [
     {
-      "name": "gemini-cli-bridge",
+      "name": "antigravity-cli-bridge",
       "source": {
         "source": "local",
-        "path": "./plugins/gemini-cli-bridge"
+        "path": "./plugins/antigravity-cli-bridge"
       },
       "policy": {
         "installation": "AVAILABLE",

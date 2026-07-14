@@ -1,16 +1,16 @@
 {
-  "name": "gemini-cli-bridge",
+  "name": "antigravity-cli-bridge",
   "version": "0.1.0",
-  "description": "Delegate Codex tasks to Gemini CLI for large-context project analysis with strict one-shot model control.",
+  "description": "Delegate Codex analysis tasks to Antigravity CLI in sandboxed plan mode with strict model control.",
   "author": {
     "name": "Michał S. Wasażnik",
-    "email": "support@example.com",
     "url": "https://www.heuron.pl"
   },
   "homepage": "https://www.aicanvas.space",
-  "repository": "https://github.com/michalwasaznik/codex-to-gemini-plugin",
+  "repository": "https://github.com/mikrus-pl/codex-to-gemini-plugin",
   "license": "MIT",
   "keywords": [
+    "antigravity",
     "gemini",
     "codex",
     "cli",
@@ -21,15 +21,14 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Gemini CLI Bridge",
-    "shortDescription": "One-shot Gemini consultation for deep project analysis",
-    "longDescription": "Provides a production-safe workflow to delegate one-shot analysis tasks from Codex to Gemini CLI in headless mode, optimized for large-context reviews by passing all related files directly into Gemini to surface technical flaws, security vulnerabilities, and business-level risks.",
+    "displayName": "Antigravity CLI Bridge",
+    "shortDescription": "Sandboxed Antigravity consultation for deep project analysis",
+    "longDescription": "Delegates one-shot project analysis from Codex to Antigravity CLI in non-interactive print mode. It fixes the requested model, forces plan mode and the Antigravity sandbox, passes explicit workspace context, and wraps the plain-text CLI response in auditable JSON.",
     "developerName": "Michał S. Wasażnik",
     "category": "Coding",
     "capabilities": [
       "Interactive",
-      "Read",
-      "Write"
+      "Read"
     ],
     "websiteURL": "https://www.heuron.pl",
     "privacyPolicyURL": "https://policies.google.com/privacy",
@@ -39,9 +38,9 @@
       "Analyze these backend and frontend files together to find vulnerabilities, logic flaws, and regression risks.",
       "Perform a one-shot architecture and delivery-risk audit using the full linked file context."
     ],
-    "brandColor": "#1A73E8",
-    "composerIcon": "./assets/gemini-cli-bridge-small.svg",
-    "logo": "./assets/gemini-cli-bridge.svg",
+    "brandColor": "#5B5BD6",
+    "composerIcon": "./assets/antigravity-cli-bridge-small.svg",
+    "logo": "./assets/antigravity-cli-bridge.svg",
     "screenshots": []
   }
 }

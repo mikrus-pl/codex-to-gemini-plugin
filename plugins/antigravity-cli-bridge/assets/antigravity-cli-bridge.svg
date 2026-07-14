@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280" role="img" aria-label="Antigravity CLI Bridge logo">
+  <defs>
+    <linearGradient id="antigravityGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#22D3EE" />
+    </linearGradient>
+  </defs>
+  <rect width="480" height="280" rx="28" fill="#0B1220" />
+  <g transform="translate(30 32)">
+    <rect width="216" height="216" rx="24" fill="#111827" />
+    <path d="M54 58h108v32H86v36h66v32H54V58z" fill="url(#antigravityGradient)" />
+    <circle cx="172" cy="158" r="24" fill="#A78BFA" />
+  </g>
+  <text x="270" y="118" fill="#E5E7EB" font-family="Menlo, Monaco, Consolas, monospace" font-size="20" font-weight="700">
+    Antigravity CLI
+  </text>
+  <text x="270" y="156" fill="#A5B4FC" font-family="Menlo, Monaco, Consolas, monospace" font-size="28" font-weight="700">
+    Bridge
+  </text>
+  <text x="270" y="196" fill="#9CA3AF" font-family="Menlo, Monaco, Consolas, monospace" font-size="14">
+    Sandboxed analysis for Codex
+  </text>
+</svg>

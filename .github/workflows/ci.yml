@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install validation tools
+        run: python -m pip install --disable-pip-version-check ruff PyYAML
+
+      - name: Check formatting and lint
+        run: |
+          ruff format --check \
+            scripts/install_global_plugin.py \
+            plugins/antigravity-cli-bridge/skills/antigravity-cli-bridge/scripts/run_antigravity.py \
+            plugins/antigravity-cli-bridge/tests
+          ruff check \
+            scripts/install_global_plugin.py \
+            plugins/antigravity-cli-bridge/skills/antigravity-cli-bridge/scripts/run_antigravity.py \
+            plugins/antigravity-cli-bridge/tests
+
+      - name: Run tests
+        run: |
+          python -m unittest discover \
+            -s plugins/antigravity-cli-bridge/tests \
+            -p "test_*.py"
+
+      - name: Validate scripts and metadata
+        run: |
+          python -m py_compile \
+            scripts/install_global_plugin.py \
+            plugins/antigravity-cli-bridge/skills/antigravity-cli-bridge/scripts/run_antigravity.py
+          python -m json.tool .agents/plugins/marketplace.json >/dev/null
+          python -m json.tool plugins/antigravity-cli-bridge/.codex-plugin/plugin.json >/dev/null
+          bash -n install-antigravity-plugin-global.command open-codex-folders.command
